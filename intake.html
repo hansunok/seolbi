@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<script src="config.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<base target="_top">
+<meta charset="utf-8">
+<style>
+:root{--primary:#1f2328;--line:#e5e7eb;--muted:#6b7280;--red:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:16px;line-height:1.5}
+.wrap{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+.head{text-align:center;margin:8px 0 18px}
+.head .co{font-size:20px;font-weight:700;color:var(--primary)}
+.head .sub{color:var(--muted);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px}
+.when{display:flex;gap:12px;align-items:center}
+.when .ic{width:44px;height:44px;border-radius:12px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.when b{font-size:17px}
+.when .svc{color:var(--muted);font-size:14px}
+label{display:block;font-size:14px;font-weight:600;margin:14px 0 6px}
+label .req{color:var(--red)}
+input:not([type=checkbox]),textarea{width:100%;font:inherit;padding:12px 13px;border:1px solid #d1d5db;border-radius:10px;background:#fff;outline:none;-webkit-appearance:none}
+input:not([type=checkbox]):focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,0,0,.06)}
+textarea{min-height:84px;resize:vertical}
+.row{display:flex;gap:8px}.row input{flex:1}
+.btn{font:inherit;border:1px solid #d1d5db;background:#fff;border-radius:10px;padding:12px 14px;white-space:nowrap;cursor:pointer}
+.btn.primary{width:100%;background:var(--primary);border-color:var(--primary);color:#fff;font-weight:700;font-size:17px;padding:15px;margin-top:6px}
+.btn:disabled{opacity:.55}
+.agree{display:flex;gap:10px;align-items:flex-start;font-size:14px;font-weight:400;margin-top:16px}
+.agree{cursor:pointer}
+.agree input{-webkit-appearance:none;appearance:none;width:22px;height:22px;margin:1px 0 0;flex-shrink:0;border:2px solid #9ca3af;border-radius:6px;background:#fff;position:relative;cursor:pointer;transition:background .12s,border-color .12s}
+.agree input:checked{background:var(--primary);border-color:var(--primary)}
+.agree input:checked::after{content:"";position:absolute;left:6px;top:2px;width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
+.agree input:focus-visible{outline:3px solid rgba(0,0,0,.15);outline-offset:2px}
+.terms{font-size:12.5px;color:var(--muted);background:#f9fafb;border-radius:10px;padding:10px 12px;margin-top:8px}
+.msg{color:var(--red);font-size:14px;min-height:20px;margin-top:10px;text-align:center}
+#postcode{display:none;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:8px;background:#fff}
+#postcode .pc-head{display:flex;justify-content:space-between;align-items:center;padding:6px 6px 6px 12px;border-bottom:1px solid var(--line);background:#f9fafb;font-size:14px;font-weight:600}
+#postcode .pc-head .btn{padding:6px 12px;font-size:13px}
+#pcFrame{height:440px}
+.state{text-align:center;padding:30px 18px}
+.state .big{font-size:44px}
+.state h2{font-size:20px;margin:10px 0 6px}
+.state p{color:var(--muted);margin:0}
+.tel{display:inline-block;margin-top:14px;color:var(--primary);font-weight:700;text-decoration:none;border:1px solid var(--line);border-radius:10px;padding:10px 16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head"><div class="co" id="co"></div><div class="sub">방문 예약 고객 정보 입력</div></div>
+  <div id="app"></div>
+</div>
+<script>
+let D = { state: "로딩" };
+/* DB판: 구글 google.script.run 대신 서버 주소(API_BASE)로 호출 */
+const google = { script: { run: { _s: null, _f: null,
+  withSuccessHandler(fn) { this._s = fn; return this; }, withFailureHandler(fn) { this._f = fn; return this; },
+  api(action, payload, token) { const s = this._s, f = this._f;
+    fetch(window.API_BASE, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, payload, token, company: window.COMPANY_CODE }) })
+      .then(r => r.json()).then(s, f); } } } };
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function $(id){return document.getElementById(id);}
+const WD=["일","월","화","수","목","금","토"];
+function when(){ if(!D.reservation_date) return ""; const p=D.reservation_date.split("-").map(Number); const d=new Date(p[0],p[1]-1,p[2]); return `${p[0]}년 ${p[1]}월 ${p[2]}일 (${WD[d.getDay()]}) ${D.start_time}`; }
+function telBtn(){ return D.company_phone ? `<a class="tel" href="tel:${esc(String(D.company_phone).replace(/[^0-9+]/g,""))}">📞 ${esc(D.company_phone)} 문의하기</a>` : ""; }
+function stateView(icon,title,text){ $("app").innerHTML=`<div class="card state"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${text}</p>${telBtn()}</div>`; }
+
+function applyHead(){
+document.title = (D.company_name||"") + " 예약 정보 입력";
+$("co").textContent = D.company_name || "";
+if (D.brand_color && /^#[0-9a-fA-F]{6}$/.test(D.brand_color)) document.documentElement.style.setProperty("--primary", D.brand_color);
+}
+
+function render(){
+  if (D.state==="완료") return stateView("✅","이미 입력이 완료되었습니다","예약 내용을 바꾸시려면 업체로 연락 주세요.");
+  if (D.state==="만료") return stateView("⏰","링크 유효시간이 지났습니다","업체에 새 링크를 요청해 주세요.");
+  if (D.state==="취소") return stateView("🚫","취소된 링크입니다","업체에 문의해 주세요.");
+  if (D.state!=="대기") return stateView("⚠️","링크를 확인할 수 없습니다","받으신 링크 주소가 맞는지 확인하시거나 업체에 문의해 주세요.");
+  $("app").innerHTML = `
+  <div class="card"><div class="when"><div class="ic">📅</div><div><b>${esc(when())}</b><div class="svc">${esc(D.service_text||"")}</div></div></div></div>
+  <div class="card">
+    <label>이름 <span class="req">*</span><input id="name" autocomplete="name" maxlength="50" placeholder="홍길동"></label>
+    <label>연락처 <span class="req">*</span><input id="phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="13" placeholder="010-1234-5678"></label>
+    <label>방문 주소 <span class="req">*</span></label>
+    <div class="row"><input id="addr" autocomplete="street-address" maxlength="200" placeholder="도로명 또는 지번 주소"><button class="btn" id="findAddr" type="button">주소 검색</button></div>
+    <div id="postcode"><div class="pc-head"><span>주소 검색</span><button class="btn" id="closePc" type="button">닫기</button></div><div id="pcFrame"></div></div>
+    <input id="detail" style="margin-top:8px" maxlength="100" placeholder="상세주소 (동·호수)">
+    <label>요청사항 <span style="font-weight:400;color:var(--muted)">(선택)</span><textarea id="req" maxlength="1000" placeholder="증상, 주차 안내, 공동현관 비밀번호 등"></textarea></label>
+    <label class="agree"><input type="checkbox" id="agree"><span>개인정보 수집·이용에 동의합니다. <span class="req">*</span></span></label>
+    <div class="terms">수집 항목: 이름, 연락처, 주소, 요청사항<br>이용 목적: 방문 서비스 예약·안내 및 작업 이력 관리<br>보유 기간: 서비스 제공 후 관계 법령에 따른 기간까지<br>동의하지 않으실 수 있으나, 이 경우 온라인 예약 접수가 어렵습니다.</div>
+    <button class="btn primary" id="send" type="button">예약 정보 보내기</button>
+    <div class="msg" id="msg"></div>
+  </div>`;
+  $("phone").addEventListener("input", e => {
+    let v = e.target.value.replace(/\D/g,"").slice(0,11);
+    if (v.startsWith("02")) v = v.replace(/^(02)(\d{0,4})(\d{0,4}).*/, (m,a,b,c)=>[a,b,c].filter(Boolean).join("-"));
+    else v = v.replace(/^(\d{0,3})(\d{0,4})(\d{0,4}).*/, (m,a,b,c)=>[a,b,c].filter(Boolean).join("-"));
+    e.target.value = v;
+  });
+  $("findAddr").onclick = openPostcode;
+  loadPostcode().catch(() => {});   // 미리 불러둠 → 휴대폰에서 누르자마자 열림
+  $("closePc").onclick = () => $("postcode").style.display = "none";
+  $("send").onclick = submit;
+}
+
+/* 주소 검색 (다음 우편번호 서비스, 화면 안에 띄움 — 못 불러오면 직접 입력) */
+let pcLoading = null;
+function loadPostcode(){
+  if (window.daum && daum.Postcode) return Promise.resolve();
+  if (pcLoading) return pcLoading;
+  pcLoading = new Promise((res, rej) => { const s=document.createElement("script"); s.src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"; s.onload=()=>res(); s.onerror=()=>{pcLoading=null;rej();}; document.head.appendChild(s); });
+  return pcLoading;
+}
+async function openPostcode(){
+  const box = $("postcode"), frame = $("pcFrame"), btn = $("findAddr"), msg = $("msg");
+  msg.textContent = "";
+  btn.disabled = true; btn.textContent = "불러오는 중";
+  try { await loadPostcode(); }
+  catch (e) { msg.textContent = "주소 검색을 불러오지 못했어요. 주소를 직접 입력해 주세요."; btn.disabled = false; btn.textContent = "주소 검색"; return; }
+  btn.disabled = false; btn.textContent = "주소 검색";
+  const done = d => {
+    $("addr").value = d.roadAddress || d.jibunAddress || d.address;
+    box.style.display = "none"; frame.innerHTML = "";
+    $("detail").focus();
+  };
+  try {
+    frame.innerHTML = "";
+    box.style.display = "block";
+    new daum.Postcode({ oncomplete: done, width: "100%", height: "100%" }).embed(frame);
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    // 화면 안에 못 띄우면 새 창으로
+    box.style.display = "none";
+    try { new daum.Postcode({ oncomplete: done }).open(); }
+    catch (e2) { msg.textContent = "주소 검색을 열지 못했어요. 주소를 직접 입력해 주세요."; }
+  }
+}
+
+function submit(){
+  const v = id => $(id).value.trim();
+  const msg = $("msg"); msg.textContent = "";
+  if (!v("name")) return msg.textContent = "이름을 입력해 주세요.";
+  if (!/^0\d{8,10}$/.test(v("phone").replace(/\D/g,""))) return msg.textContent = "연락처를 정확히 입력해 주세요.";
+  if (!v("addr")) return msg.textContent = "방문 주소를 입력해 주세요.";
+  if (!$("agree").checked) return msg.textContent = "개인정보 수집·이용에 동의해 주세요.";
+  const btn = $("send"); btn.disabled = true; btn.textContent = "보내는 중...";
+  const payload = { link_id: D.link_id, name: v("name"), phone: v("phone"), address: v("addr"), detail_address: v("detail"), customer_request: v("req"), agree: true };
+  const fail = text => { btn.disabled = false; btn.textContent = "예약 정보 보내기"; msg.textContent = text; };
+  google.script.run
+    .withSuccessHandler(r => {
+      if (!r || !r.ok) return fail((r && r.error) || "저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      stateView("✅", "예약 정보가 접수되었습니다", `${esc(when())} 방문 예정입니다.<br>확인 후 연락드리겠습니다. 감사합니다.`);
+    })
+    .withFailureHandler(() => fail("인터넷 연결을 확인하고 다시 시도해 주세요."))
+    .api("intake_submit", payload, "");
+}
+(function(){
+  const f = new URLSearchParams(location.search).get("f") || "";
+  $("app").innerHTML = '<div class="card state"><p>불러오는 중...</p></div>';
+  google.script.run.withSuccessHandler(r => { D = (r && r.ok && r.data) ? r.data : { state: "오류" }; applyHead(); render(); })
+    .withFailureHandler(() => { D = { state: "오류" }; applyHead(); render(); })
+    .api("intake_public", { link_id: f }, "");
+})();
+</script>
+</body>
+</html>
