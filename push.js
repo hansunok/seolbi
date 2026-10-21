@@ -12,7 +12,7 @@
 
   if (secure() && "serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").then(r => { reg = r; }).catch(() => {});
-    navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "push-open" && typeof go === "function" && App.me) go("myday"); });
+    navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "push-open" && typeof go === "function" && App.me) { const h = String(e.data.url || "").split("#")[1] || ""; go(Views[h] ? h : "myday"); } });
   }
 
   function b64ToBytes(s) { const p = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, c => c.charCodeAt(0)); }

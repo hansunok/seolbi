@@ -72,6 +72,12 @@ input:focus{outline:none;border-color:var(--accent)}
     </div>
 
     <div class="card">
+      <h2>업체 협력 — 제안받기 승인 <span id="shCnt" style="color:var(--muted);font-weight:400"></span></h2>
+      <p class="hint" style="margin-top:0">업체가 '타업체에서 서비스 제안받기'를 켜면 여기에 승인 요청이 옵니다. 승인한 업체끼리만 제휴·배정을 할 수 있습니다.</p>
+      <div class="list" id="shList">불러오는 중...</div>
+    </div>
+
+    <div class="card">
       <h2>업체 목록 <span id="cnt" style="color:var(--muted);font-weight:400"></span></h2>
       <div class="list" id="list">불러오는 중...</div>
     </div>
@@ -116,7 +122,28 @@ async function load() {
       </div>
     </div>`).join("") || "등록된 업체가 없습니다.";
 }
-async function start() { $("loginBox").hidden = true; $("main").hidden = false; try { await load(); } catch (e) { $("list").textContent = e.message; } }
+async function loadShare() {
+  const rows = await call("op_share_list");
+  const wait = rows.filter(x => x.approved === "대기").length;
+  $("shCnt").textContent = wait ? `승인 대기 ${wait}곳` : "";
+  const order = { "대기": 0, "보류": 1, "승인": 2, "미신청": 3 };
+  rows.sort((a, b) => (order[a.approved] ?? 9) - (order[b.approved] ?? 9));
+  $("shList").innerHTML = rows.map(x => `
+    <div class="co">
+      <div style="flex:1 1 220px"><div class="name">${esc(x.name || x.company_id)} <span class="tag ${x.approved === "승인" ? "on" : "off"}">${esc(x.approved)}</span> ${x.enabled ? "" : '<span class="tag off">제안받기 꺼짐</span>'} ${x.warn ? '<span class="tag off">⚠️ 확인 필요</span>' : ""}</div>
+        <div class="meta">분류 ${esc((x.categories || []).join(", "))} · 지역 ${esc(x.areas.slice(0, 10).join(", "))}${x.areas.length > 10 ? ` 외 ${x.areas.length - 10}곳` : ""}</div>
+        <div class="meta">평가 ${x.review_count}건${x.avg_stars != null ? ` · 평균 ★${x.avg_stars}` : ""} · 완료 ${x.done_count}건 · 수락 후 취소 ${x.cancel_count}건</div></div>
+      <div class="acts">
+        ${x.approved !== "승인" ? `<button class="btn sm primary" onclick="shApprove('${esc(x.company_id)}','승인')">승인</button>` : ""}
+        ${x.approved !== "보류" ? `<button class="btn sm danger" onclick="shApprove('${esc(x.company_id)}','보류')">보류</button>` : ""}
+      </div>
+    </div>`).join("") || "아직 신청한 업체가 없습니다.";
+}
+async function shApprove(id, v) {
+  if (v === "보류" && !confirm("보류하면 이 업체는 제휴 찾기·배정 요청에서 빠집니다. 계속할까요?")) return;
+  try { await call("op_share_approve", { company_id: id, approved: v }); await loadShare(); } catch (e) { alert(e.message); }
+}
+async function start() { $("loginBox").hidden = true; $("main").hidden = false; try { await load(); } catch (e) { $("list").textContent = e.message; } try { await loadShare(); } catch (e) { $("shList").textContent = e.message; } }
 async function createCompany() {
   const m = $("nMsg"); m.className = "msg"; m.textContent = ""; $("nBtn").disabled = true;
   try {
