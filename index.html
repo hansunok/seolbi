@@ -127,6 +127,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 .item:hover{background:#fafbff}
 .item .main-col{flex:1;min-width:0}
 .item .side-col{text-align:right;flex:0 0 auto}
+.btn.delx{padding:3px 8px;margin-left:6px;margin-top:4px}
 .item .title{font-weight:700}
 .item .sub{font-size:13px;color:var(--muted);margin-top:2px}
 
@@ -497,6 +498,8 @@ async function startApp() {
   Store.set("bc_role", b.me.role, true);
   App.me = b.me; App.admins = b.admins; App.services = b.services; App.today = b.today; App.company = b.company; App.slot = b.slot_minutes || 30; App.quoteVat = b.quote_vat || "포함"; App.quoteValidDays = b.quote_valid_days || 30; App.allowPast = !!b.allow_past;
   applyBrand(b.company, b.brand_color);
+  App.canDelete = false;
+  if (isSuper()) api("delete_perm", {}, { silent: true }).then(d => { if (d && d.can_delete) { App.canDelete = true; refreshView(); } }, () => {});
   document.getElementById("meName").textContent = App.me.name + (isSuper() ? " · 최고관리자" : "");
   document.getElementById("loginView").hidden = true;
   document.getElementById("appView").hidden = false;
@@ -593,6 +596,28 @@ function confirmBox(message, okText) {
     m.$("[data-no]").onclick = () => { m.close(); res(false); };
     m.$("[data-yes]").onclick = () => { m.close(); res(true); };
   });
+}
+
+/* --- 데이터 삭제 (운영자가 삭제 권한을 준 최고관리자만 버튼이 보임) --- */
+function delBtn(type, id) {
+  if (!App.canDelete || !id) return "";
+  return `<button class="btn sm danger delx" title="삭제" onclick="event.stopPropagation();askDelete('${type}','${esc(id)}')">🗑</button>`;
+}
+async function askDelete(type, id) {
+  let pv;
+  try { pv = await api("delete_preview", { type, id }); } catch (e) { return toast(e.message, true); }
+  const extra = pv.items && pv.items.length ? `<div class="section-title" style="margin-top:12px">함께 처리되는 것</div><ul style="margin:6px 0 0;padding-left:20px">${pv.items.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  const ok = await new Promise(res => {
+    const m = openModal({ title: "삭제 확인", body: `<div><b>${esc(pv.title)}</b> 을(를) 삭제합니다.</div>${extra}<div class="red small" style="margin-top:12px">삭제하면 되돌릴 수 없습니다.</div>`, foot: `<button class="btn" data-no>취소</button><button class="btn danger" data-yes>삭제</button>` });
+    m.$("[data-no]").onclick = () => { m.close(); res(false); };
+    m.$("[data-yes]").onclick = () => { m.close(); res(true); };
+  });
+  if (!ok) return;
+  try { await run(() => api("delete_do", { type, id }), "삭제했습니다."); } catch (e) { return; }
+  clearApiCache();
+  if (type === "service") { try { App.services = await api("services", {}, { fresh: true, silent: true }); } catch (e) {} }
+  if (type === "part" && typeof Inv !== "undefined") Inv.parts = [];
+  refreshView(true);
 }
 
 function promptBox(message, placeholder) {
@@ -927,7 +952,7 @@ function renderResList() {
         <div class="sub">${esc(r.service_text)}${r.address ? " · " + esc(r.address) : ""}</div>
         ${r.customer_request ? `<div class="sub">💬 ${esc(r.customer_request)}</div>` : ""}
       </div>
-      <div class="side-col"><div class="b">${money(r.final_amount)}</div>${r.remaining > 0 ? `<div class="xs red">미수 ${money(r.remaining)}</div>` : ""}<div class="xs faint">${esc(r.reservation_id)}</div></div>
+      <div class="side-col"><div class="b">${money(r.final_amount)}</div>${r.remaining > 0 ? `<div class="xs red">미수 ${money(r.remaining)}</div>` : ""}<div class="xs faint">${esc(r.reservation_id)}</div>${delBtn("reservation", r.reservation_id)}</div>
     </div>`).join("") : `<div class="empty">${Res.list.length ? "조건에 맞는 예약이 없습니다." : "등록된 예약이 없습니다."}</div>`)
     + (more ? `<div style="padding:10px;text-align:center"><button class="btn" onclick="Res.limit+=200;renderResList()">${more}건 더 보기</button></div>` : "")
     + (Res.loadedFrom && !Res.filters.from ? `<div class="xs muted" style="padding:6px;text-align:center">${dayLabel(Res.loadedFrom)} 이전 예약은 날짜를 고르거나 [전체 기간]을 누르세요.</div>` : "");
@@ -1590,7 +1615,7 @@ function renderCustList() {
       <div class="main-col"><div class="title">${esc(c.name)} <span class="pill">${esc(c.customer_type)}</span></div>
         <div class="sub">${telLink(c.phone)} · ${esc([c.address, c.detail_address].filter(Boolean).join(" "))}</div>
         ${c.memo ? `<div class="sub">📝 ${esc(c.memo)}</div>` : ""}</div>
-      <div class="side-col small"><div>방문 ${c.visit_count}회</div><div class="muted">${c.last_visit ? "최근 " + dayLabel(c.last_visit) : "방문 없음"}</div>${c.receivable ? `<div class="red b">미수 ${money(c.receivable)}</div>` : ""}</div>
+      <div class="side-col small"><div>방문 ${c.visit_count}회</div><div class="muted">${c.last_visit ? "최근 " + dayLabel(c.last_visit) : "방문 없음"}</div>${c.receivable ? `<div class="red b">미수 ${money(c.receivable)}</div>` : ""}${delBtn("customer", c.customer_id)}</div>
     </div>`).join("") : '<div class="empty">고객이 없습니다.</div>';
 }
 
@@ -1716,7 +1741,7 @@ function drawSales() {
     <td data-l="매출일" class="nowrap">${esc(s.sale_datetime.slice(0, 16))}</td><td data-l="고객"><b>${esc(s.customer_name)}</b></td><td data-l="서비스">${esc(s.service_name)}</td>
     <td data-l="담당">${esc(adminName(s.assignee_id))}</td><td data-l="서비스" class="num">${money(s.service_revenue)}</td><td data-l="부품" class="num">${money(s.parts_revenue)}</td>
     <td data-l="총액" class="num b">${money(s.total_amount)}</td><td data-l="입금" class="num">${money(s.paid_amount)}</td><td data-l="상태">${payPill(s.status)}</td>
-    <td>${s.remaining > 0 ? `<button class="btn sm accent" data-pay="${Sal.list.indexOf(s)}">입금</button>` : ""}</td></tr>`).join("");
+    <td class="nowrap">${s.remaining > 0 ? `<button class="btn sm accent" data-pay="${Sal.list.indexOf(s)}">입금</button>` : ""}${delBtn("sale", s.sales_id)}</td></tr>`).join("");
   document.querySelectorAll("#sBody tr").forEach(tr => tr.onclick = e => {
     const s = Sal.list[tr.dataset.i];
     if (e.target.dataset.pay !== undefined) { e.stopPropagation(); return openPaymentForm(s, renderSalesList); }
@@ -1818,7 +1843,7 @@ async function renderExpenses() {
     const list = await api("expenses", { from: val("exFrom"), to: val("exTo") });
     const total = list.reduce((a, e) => a + e.amount, 0);
     document.getElementById("exList").innerHTML = `<div class="small muted" style="margin-bottom:6px">${list.length}건 · 합계 <b>${money(total)}</b></div>` +
-      (list.map(e => `<div class="item" data-id="${esc(e.expense_id)}"><div class="main-col"><b>${esc(e.expense_date)}</b> <span class="pill">${esc(e.category)}</span><div class="sub">${esc(e.content)} ${e.memo ? "· " + esc(e.memo) : ""}</div></div><div class="side-col b">${money(e.amount)}<div class="xs muted">${esc(e.method)} · ${esc(adminName(e.admin_id))}</div></div></div>`).join("") || '<div class="empty">지출이 없습니다.</div>');
+      (list.map(e => `<div class="item" data-id="${esc(e.expense_id)}"><div class="main-col"><b>${esc(e.expense_date)}</b> <span class="pill">${esc(e.category)}</span><div class="sub">${esc(e.content)} ${e.memo ? "· " + esc(e.memo) : ""}</div></div><div class="side-col b">${money(e.amount)}<div class="xs muted">${esc(e.method)} · ${esc(adminName(e.admin_id))}</div>${delBtn("expense", e.expense_id)}</div></div>`).join("") || '<div class="empty">지출이 없습니다.</div>');
     document.querySelectorAll("#exList [data-id]").forEach(x => x.onclick = () => expenseForm(list.find(e => e.expense_id === x.dataset.id), load));
   };
   document.getElementById("exFrom").onchange = load; document.getElementById("exTo").onchange = load;
@@ -1893,7 +1918,7 @@ function renderParts() {
       <td data-l="현재재고" class="num b ${p.low ? "red" : ""}">${p.current_stock} ${esc(p.unit)}</td><td data-l="안전재고" class="num">${p.safety_stock}</td>
       <td data-l="평균원가" class="num">${money(p.average_cost)}</td><td data-l="청구단가" class="num">${money(p.sale_price)}</td>
       <td data-l="상태">${p.active !== "Y" ? '<span class="pill">미사용</span>' : p.low ? '<span class="pill danger">재고주의</span>' : '<span class="pill ok">정상</span>'}</td>
-      <td><button class="btn sm" data-stock="${esc(p.part_id)}">입출고</button></td></tr>`).join("") || '<tr><td colspan="8" class="empty">부품이 없습니다.</td></tr>';
+      <td class="nowrap"><button class="btn sm" data-stock="${esc(p.part_id)}">입출고</button>${delBtn("part", p.part_id)}</td></tr>`).join("") || '<tr><td colspan="8" class="empty">부품이 없습니다.</td></tr>';
     document.querySelectorAll("#pBody tr[data-id]").forEach(tr => tr.onclick = e => {
       if (e.target.dataset.stock) { e.stopPropagation(); return openStockForm(e.target.dataset.stock); }
       openPartForm(Inv.parts.find(p => p.part_id === tr.dataset.id));
@@ -1980,7 +2005,7 @@ Views.services = {
     document.getElementById("svList").innerHTML = cats.map(c => `<div class="section-title" style="margin-top:4px">${esc(c)}</div>` + App.services.filter(s => (s.category || "기타") === c).map(s => `
       <div class="item" data-id="${esc(s.service_id)}"><div class="main-col"><div class="title">${esc(s.service_name)} ${s.active !== "Y" ? '<span class="pill">미사용</span>' : ""}</div>
         <div class="sub">${s.duration_min}분${s.discount_allowed === "Y" ? ` · 할인 최대 ${s.max_discount_rate}%` : " · 할인 불가"}${s.parts.length ? " · 기본부품: " + s.parts.map(p => esc((Inv.parts.find(x => x.part_id === p.part_id) || {}).part_name || p.part_id) + "×" + p.default_quantity).join(", ") : ""}</div></div>
-        <div class="side-col b">${money(s.base_price)}<div class="xs faint">${esc(s.service_id)}</div></div></div>`).join("")).join("") || '<div class="empty">서비스가 없습니다.</div>';
+        <div class="side-col b">${money(s.base_price)}<div class="xs faint">${esc(s.service_id)}</div>${delBtn("service", s.service_id)}</div></div>`).join("")).join("") || '<div class="empty">서비스가 없습니다.</div>';
     document.querySelectorAll("#svList [data-id]").forEach(x => x.onclick = () => openServiceForm(App.services.find(s => s.service_id === x.dataset.id)));
   }
 };
@@ -2345,7 +2370,7 @@ function drawQuotes() {
         <div class="sub">${x.title ? esc(x.title) + " · " : ""}${esc(x.item_text)}</div>
         <div class="xs faint">${esc(x.quote_id)} · 유효 ${esc(x.valid_until)}${x.valid_until && x.valid_until < todayStr() && ["작성", "발송"].includes(x.status) ? ' <span class="red">기한 지남</span>' : ""}</div>
       </div>
-      <div class="side-col"><div class="b">${money(x.total_amount)}</div><div class="xs muted">부가세 ${esc(x.vat_mode)}</div></div>
+      <div class="side-col"><div class="b">${money(x.total_amount)}</div><div class="xs muted">부가세 ${esc(x.vat_mode)}</div>${delBtn("quote", x.quote_id)}</div>
     </div>`).join("") : `<div class="empty">${QuoteSt.list.length ? "조건에 맞는 견적서가 없습니다." : "작성한 견적서가 없습니다. [+ 새 견적서]로 시작하세요."}</div>`;
 }
 
