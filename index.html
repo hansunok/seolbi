@@ -974,7 +974,7 @@ async function openReservationForm(opts) {
       ${edit ? "" : `
       <div class="section-title">서비스</div>
       <div id="fLines"></div>
-      <button class="btn sm" id="fAddLine" style="margin-top:6px">+ 서비스 추가</button>
+      <div class="row" style="margin-top:6px"><button class="btn sm" id="fAddLine">+ 서비스 추가</button><button class="btn sm ghost" id="fNewSvc">+ 신규 서비스 등록</button></div>
       <div class="grid2">
         <label>추가금액<input type="number" id="fExtra" min="0" step="1000" value="0"></label>
         <label>할인금액<input type="number" id="fDiscount" min="0" step="1000" value="0"></label>
@@ -1038,6 +1038,15 @@ async function openReservationForm(opts) {
     row.querySelector("button").onclick = () => { row.remove(); if (!$("fLines").children.length) addLine(); calc(); updateEnds(); };
     $("fLines").appendChild(row); calc();
   }
+  // [신규 서비스 등록] 저장 후: 서비스 목록 새로 받고, 비어 있는 줄(없으면 새 줄)에 새 서비스를 넣음
+  function svcOptions() { return `<option value="">서비스 선택</option>${App.services.filter(s => s.active === "Y").map(s => `<option value="${esc(s.service_id)}">${esc(s.service_name)} (${money(s.base_price)})</option>`).join("")}`; }
+  if (!edit) $("fNewSvc").onclick = () => openServiceForm({ parts: [] }, async saved => {
+    try { App.services = await api("services", {}, { fresh: true }); } catch (e) {}
+    [...$("fLines").children].forEach(r => { const sel = r.querySelector(".lsvc"), v = sel.value; sel.innerHTML = svcOptions(); sel.value = v; });
+    const empty = [...$("fLines").children].find(r => !r.querySelector(".lsvc").value);
+    if (empty) empty.querySelector(".lsvc").value = saved.service_id; else addLine(saved.service_id);
+    calc(); updateEnds();
+  });
   function lines() {
     if (edit) return [];
     return [...$("fLines").children].map(r => {
@@ -1974,8 +1983,9 @@ Views.services = {
     document.querySelectorAll("#svList [data-id]").forEach(x => x.onclick = () => openServiceForm(App.services.find(s => s.service_id === x.dataset.id)));
   }
 };
-function openServiceForm(s) {
+async function openServiceForm(s, onSaved) {
   s = s || { parts: [] };
+  if (!Inv.parts.length) { try { Inv.parts = await api("parts", {}, { silent: true }); } catch (e) {} }
   const sp = (s.parts || []).map(p => Object.assign({}, p));
   const m = openModal({
     title: s.service_id ? "서비스 수정" : "서비스 등록",
@@ -1998,8 +2008,9 @@ function openServiceForm(s) {
   m.$("#svAddPart").onchange = e => { const id = e.target.value; if (id && !sp.some(p => p.part_id === id)) sp.push({ part_id: id, default_quantity: 1 }); e.target.value = ""; draw(); };
   draw();
   m.$("#svSave").onclick = async () => {
-    await run(() => api("service_save", { service_id: s.service_id || "", service_name: m.$("#svName").value, category: m.$("#svCat").value, base_price: m.$("#svPrice").value, duration_min: m.$("#svDur").value, discount_allowed: m.$("#svDisc").value, max_discount_rate: m.$("#svRate").value, active: m.$("#svAct").value, description: m.$("#svDesc").value, parts: sp }), "서비스를 저장했습니다.");
-    m.close(); refreshView();
+    const saved = await run(() => api("service_save", { service_id: s.service_id || "", service_name: m.$("#svName").value, category: m.$("#svCat").value, base_price: m.$("#svPrice").value, duration_min: m.$("#svDur").value, discount_allowed: m.$("#svDisc").value, max_discount_rate: m.$("#svRate").value, active: m.$("#svAct").value, description: m.$("#svDesc").value, parts: sp }), "서비스를 저장했습니다.");
+    m.close();
+    if (onSaved) onSaved(saved || {}); else refreshView();
   };
 }
 </script>
