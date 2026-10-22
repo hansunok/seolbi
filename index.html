@@ -1914,7 +1914,7 @@ async function renderInvHistory() {
   await load();
 }
 
-function openPartForm(p) {
+function openPartForm(p, onSaved) {
   p = p || {};
   const isNew = !p.part_id;
   const m = openModal({
@@ -1932,8 +1932,9 @@ function openPartForm(p) {
   m.$("[data-x]").onclick = m.close;
   if (!isNew) m.$("#pfStock").onclick = () => { m.close(); openStockForm(p.part_id); };
   m.$("#pfSave").onclick = async () => {
-    await run(() => api("part_save", { part_id: p.part_id || "", part_name: m.$("#pfName").value, category: m.$("#pfCat").value, model_spec: m.$("#pfSpec").value, unit: m.$("#pfUnit").value, purchase_price: m.$("#pfBuy").value, sale_price: m.$("#pfSell").value, safety_stock: m.$("#pfSafe").value, initial_stock: isNew ? m.$("#pfInit").value : 0, supplier: m.$("#pfSup").value, location: m.$("#pfLoc").value, active: m.$("#pfAct").value, memo: m.$("#pfMemo").value }), "부품을 저장했습니다.");
-    m.close(); refreshView();
+    const saved = await run(() => api("part_save", { part_id: p.part_id || "", part_name: m.$("#pfName").value, category: m.$("#pfCat").value, model_spec: m.$("#pfSpec").value, unit: m.$("#pfUnit").value, purchase_price: m.$("#pfBuy").value, sale_price: m.$("#pfSell").value, safety_stock: m.$("#pfSafe").value, initial_stock: isNew ? m.$("#pfInit").value : 0, supplier: m.$("#pfSup").value, location: m.$("#pfLoc").value, active: m.$("#pfAct").value, memo: m.$("#pfMemo").value }), "부품을 저장했습니다.");
+    m.close();
+    if (onSaved) onSaved(saved || {}); else refreshView();
   };
 }
 
@@ -1995,7 +1996,7 @@ async function openServiceForm(s, onSaved) {
       <label>사용<select id="svAct"><option value="Y">사용</option><option value="N">미사용</option></select></label><label class="span2">설명<input id="svDesc" value="${esc(s.description)}"></label></div>
       <div class="section-title">기본 사용 부품 <span class="xs muted" style="font-weight:400">(작업완료 때 자동으로 들어가요)</span></div>
       <div id="svParts"></div>
-      <select id="svAddPart" style="margin-top:6px"><option value="">+ 부품 추가</option>${Inv.parts.map(p => `<option value="${esc(p.part_id)}">${esc(p.part_name)} ${esc(p.model_spec)}</option>`).join("")}</select>`,
+      <div class="row" style="margin-top:6px"><select id="svAddPart" class="grow" style="width:auto;flex:1"></select><button class="btn sm ghost" id="svNewPart">+ 신규 부품 등록</button></div>`,
     foot: `<button class="btn" data-x>취소</button><button class="btn primary" id="svSave">저장</button>`
   });
   m.$("#svCat").value = s.category || "홈케어"; m.$("#svDisc").value = s.discount_allowed || "Y"; m.$("#svAct").value = s.active || "Y";
@@ -2005,6 +2006,15 @@ async function openServiceForm(s, onSaved) {
     m.$$("#svParts input").forEach(x => x.oninput = () => sp[x.dataset.i].default_quantity = Math.max(1, num(x.value)));
     m.$$("#svParts [data-d]").forEach(x => x.onclick = () => { sp.splice(Number(x.dataset.d), 1); draw(); });
   };
+  const partOptions = () => { m.$("#svAddPart").innerHTML = `<option value="">+ 부품 추가</option>${Inv.parts.filter(p => p.active !== "N").map(p => `<option value="${esc(p.part_id)}">${esc(p.part_name)} ${esc(p.model_spec)}</option>`).join("")}`; };
+  partOptions();
+  // [신규 부품 등록] 저장 후: 부품 목록 새로 받고, 이 서비스의 기본 사용 부품에 바로 추가
+  m.$("#svNewPart").onclick = () => openPartForm({}, async saved => {
+    try { Inv.parts = await api("parts", {}, { fresh: true, silent: true }); } catch (e) {}
+    partOptions();
+    if (saved.part_id && !sp.some(x => x.part_id === saved.part_id)) sp.push({ part_id: saved.part_id, default_quantity: 1 });
+    draw();
+  });
   m.$("#svAddPart").onchange = e => { const id = e.target.value; if (id && !sp.some(p => p.part_id === id)) sp.push({ part_id: id, default_quantity: 1 }); e.target.value = ""; draw(); };
   draw();
   m.$("#svSave").onclick = async () => {
