@@ -184,6 +184,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 .tl-past{background:#fafafa}
 .tl-res{margin:2px 3px;border-radius:7px;padding:3px 7px;font-size:12px;color:#fff;overflow:hidden;cursor:pointer;z-index:2;line-height:1.35;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .tl-res.done{opacity:.6}
+.tl-res .tl-addr{font-size:11px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* 예약 폼의 담당자 막대 */
 .board{border:1px solid var(--line);border-radius:10px;padding:10px;background:#fafafa;margin-top:12px}
@@ -857,8 +858,8 @@ function renderDay() {
     a.reservations.forEach(r => {
       resCount++;
       const s = toMin(r.start_time), span = Math.max(1, Math.ceil((toMin(r.end_time) - s) / step));
-      h += `<div class="tl-res ${isDone(r.status) ? "done" : ""}" style="grid-column:${col};grid-row:${rowOf(s)} / span ${span};background:${color}" onclick="openReservationDetail('${esc(r.reservation_id)}')">
-        <b>${esc(r.start_time)}~${esc(r.end_time)} ${esc(r.customer_name)}</b>${span > 1 ? `<div>${esc(r.service_text)}</div>` : ""}${span > 2 ? `<div class="xs">${esc(r.status)}</div>` : ""}</div>`;
+      h += `<div class="tl-res ${isDone(r.status) ? "done" : ""}" style="grid-column:${col};grid-row:${rowOf(s)} / span ${span};background:${color}" onclick="openReservationDetail('${esc(r.reservation_id)}')" title="${esc(r.start_time + "~" + r.end_time + " " + r.customer_name + (r.address ? "\n📍 " + r.address : ""))}">
+        <b>${esc(r.start_time)}~${esc(r.end_time)} ${esc(r.customer_name)}</b>${span > 1 ? `<div>${esc(r.service_text)}</div>` : ""}${span > 1 && r.address ? `<div class="tl-addr">📍 ${esc(r.address)}</div>` : ""}${span > 3 ? `<div class="xs">${esc(r.status)}</div>` : ""}</div>`;
     });
   });
   for (let m = from; m < to; m += step) h += `<div class="tl-time" style="grid-column:1;grid-row:${rowOf(m)}">${m % 60 === 0 ? hhmm(m) : ""}</div>`;
