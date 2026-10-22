@@ -46,9 +46,22 @@
         while (box.firstChild) lines.parentNode.insertBefore(box.firstChild, title);
         const sel = m.querySelector("#fChannel"), info = m.querySelector("#fChFee");
         const show = () => { const c = (C.channels || []).find(x => x.channel_id === sel.value); info.textContent = c ? feeText(c) : ""; };
-        sel.onchange = show;
+        sel.onchange = () => { sel.dataset.touched = "1"; hint.textContent = ""; show(); };
+        const hint = document.createElement("div"); hint.className = "xs muted"; hint.style.marginTop = "4px";
+        sel.closest(".row").after(hint);
+        // 고객을 고르면 그 고객의 지난번 유입경로를 미리 골라 줌 (직접 바꾸면 그대로 둠)
+        const pick = cid => {
+          if (sel.dataset.touched === "1" || !cid) return;
+          const c = ((typeof Res !== "undefined" && Res.customers) || []).find(x => x.customer_id === cid);
+          const ch = c && c.last_channel_id && (C.channels || []).find(x => x.channel_id === c.last_channel_id && x.active);
+          if (ch) { sel.value = ch.channel_id; hint.textContent = "단골 고객 — 지난번 유입경로를 골라 두었어요"; }
+          else { sel.value = ""; hint.textContent = ""; }
+          show();
+        };
+        m.addEventListener("click", e => { const x = e.target.closest("#fCustResults [data-cid]"); if (x) setTimeout(() => pick(x.dataset.cid), 0); }, true);
         channels().then(list => {
           sel.innerHTML = chOptions("", true, "", true);
+          if (opts && opts.customer && opts.customer.customer_id) loadCustomersCache().then(() => pick(opts.customer.customer_id)).catch(() => {});
           if (!list.length) sel.innerHTML = `<option value="">(등록된 경로 없음${isSuper() ? " — 메뉴 '유입경로'에서 추가" : ""})</option>`;
           show();
         }).catch(() => { sel.innerHTML = '<option value="">선택 안 함</option>'; });
@@ -98,6 +111,48 @@
         const dd = document.createElement("dd"); dd.innerHTML = '<span class="muted small">...</span>';
         dl.appendChild(dt); dl.appendChild(dd);
         drawDetailRow(dd, id);
+      } catch (e) {}
+      return ret;
+    };
+  }
+
+  /* ---------- 예약 목록: 유입경로 표시·필터 ---------- */
+  const origResList = window.renderResList;
+  if (typeof origResList === "function") {
+    window.renderResList = function () {
+      const full = Res.list, f = C.resCh || "";
+      if (f) Res.list = full.filter(r => f === "__none" ? !r.channel_name : r.channel_name === f);
+      try { origResList.apply(this, arguments); } finally { Res.list = full; }
+      try {
+        const byId = {}; full.forEach(r => byId[r.reservation_id] = r);
+        document.querySelectorAll("#resList .item[onclick]").forEach(it => {
+          const m = /openReservationDetail\('([^']+)'\)/.exec(it.getAttribute("onclick") || ""), r = m && byId[m[1]];
+          if (!r || !r.channel_name || it.querySelector(".chpill")) return;
+          const row = it.querySelector(".main-col .row");
+          if (row) row.insertAdjacentHTML("beforeend", `<span class="pill chpill" title="유입경로">🧲 ${esc(r.channel_name)}</span>`);
+        });
+        if (f) { const cnt = document.getElementById("rfCount"); if (cnt) cnt.textContent += " · 경로: " + (f === "__none" ? "미지정" : f); }
+      } catch (e) {}
+    };
+  }
+  const origResView = Views.reservations;
+  if (origResView && origResView.render) {
+    const origRender = origResView.render;
+    origResView.render = async function (el) {
+      const ret = origRender.apply(this, arguments);
+      try {
+        const rfS = el.querySelector("#rfS");
+        if (rfS && !el.querySelector("#rfCh")) {
+          const sel = document.createElement("select"); sel.id = "rfCh";
+          const fill = () => {
+            const names = [...new Set((C.channels || []).map(c => c.name))];
+            sel.innerHTML = `<option value="">전체 경로</option><option value="__none">경로 미지정</option>` + names.map(n => `<option ${C.resCh === n ? "selected" : ""}>${esc(n)}</option>`).join("");
+            if (C.resCh === "__none") sel.value = "__none";
+          };
+          fill(); channels().then(fill).catch(() => {});
+          sel.onchange = () => { C.resCh = sel.value; renderResList(); };
+          rfS.after(sel);
+        }
       } catch (e) {}
       return ret;
     };
