@@ -10,13 +10,14 @@
   });
   const tryRun = (fn, msg) => run(fn, msg).catch(() => null);
   async function channels(force) { if (!C.channels || force) C.channels = await sget("channel_list"); return C.channels; }
-  const feeText = c => !c || c.fee_type === "없음" ? "수수료 없음" : (c.fee_type === "정률" ? `수수료 ${c.fee_value}%` : `수수료 ${money(c.fee_value)}`) + (c.fee_when === "완료" ? " · 작업완료 때" : " · 예약 때");
+  const feeText = c => c && c.fee_type === "소개비" ? "업체 협력 소개비 · 작업완료 때 (요청마다 금액 다름)" : !c || c.fee_type === "없음" ? "수수료 없음" : (c.fee_type === "정률" ? `수수료 ${c.fee_value}%` : `수수료 ${money(c.fee_value)}`) + (c.fee_when === "완료" ? " · 작업완료 때" : " · 예약 때");
   const stPill = s => `<span class="pill ${s === "지급완료" ? "ok" : "warn"}">${esc(s || "미지급")}</span>`;
   const monthLabel = m => `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`;
   const shiftMonth = (m, d) => { const x = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + d, 1); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0"); };
   const lastDay = m => { const x = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0); return m + "-" + String(x.getDate()).padStart(2, "0"); };
-  const chOptions = (sel, withEmpty, emptyText) => (withEmpty ? `<option value="">${emptyText || "선택 안 함"}</option>` : "") +
-    (C.channels || []).filter(c => c.active || c.channel_id === sel).map(c => `<option value="${esc(c.channel_id)}" ${c.channel_id === sel ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+  // manual=true: 직접 고르는 곳(예약 등록·변경)에서는 제휴_ 경로(업체 협력 자동)를 빼고 보여줌
+  const chOptions = (sel, withEmpty, emptyText, manual) => (withEmpty ? `<option value="">${emptyText || "선택 안 함"}</option>` : "") +
+    (C.channels || []).filter(c => (c.active || c.channel_id === sel) && (!manual || c.fee_type !== "소개비" || c.channel_id === sel)).map(c => `<option value="${esc(c.channel_id)}" ${c.channel_id === sel ? "selected" : ""}>${esc(c.name)}</option>`).join("");
 
   /* ---------- 서버 요청에 유입경로 붙이기 ---------- */
   const origApi = window.api;
@@ -47,7 +48,7 @@
         const show = () => { const c = (C.channels || []).find(x => x.channel_id === sel.value); info.textContent = c ? feeText(c) : ""; };
         sel.onchange = show;
         channels().then(list => {
-          sel.innerHTML = chOptions("", true) ;
+          sel.innerHTML = chOptions("", true, "", true);
           if (!list.length) sel.innerHTML = `<option value="">(등록된 경로 없음${isSuper() ? " — 메뉴 '유입경로'에서 추가" : ""})</option>`;
           show();
         }).catch(() => { sel.innerHTML = '<option value="">선택 안 함</option>'; });
@@ -60,10 +61,10 @@
   async function drawDetailRow(dd, id) {
     let r; try { r = await api("reservation_get", { reservation_id: id }, { silent: true }); } catch (e) { return; }
     if (!("channel" in r)) { dd.textContent = "-"; return; }
-    const fees = (r.channel_fees || []).filter(f => f.kind === "예약수수료");
+    const fees = (r.channel_fees || []).filter(f => f.kind === "예약수수료" || f.kind === "소개비");
     dd.innerHTML = `${r.channel ? `<b>${esc(r.channel.name)}</b>` : '<span class="muted">지정 안 함</span>'}
       ${fees.map(f => ` · ${money(f.amount)} ${stPill(f.status)}`).join("")}
-      ${r.channel && !fees.length && r.channel.fee_type !== "없음" ? `<span class="xs muted"> · ${r.channel.fee_when === "완료" ? "작업완료 때 수수료 생김" : ""}</span>` : ""}
+      ${r.channel && !fees.length && r.channel.fee_type !== "없음" ? `<span class="xs muted"> · ${r.channel.fee_type === "소개비" ? "작업완료 때 소개비 생김" : r.channel.fee_when === "완료" ? "작업완료 때 수수료 생김" : ""}</span>` : ""}
       <button class="btn sm ghost" data-chset>${r.channel ? "변경" : "지정"}</button>`;
     dd.querySelector("[data-chset]").onclick = () => openChannelSet(id, r.channel ? r.channel.channel_id : "", fees, () => drawDetailRow(dd, id));
   }
@@ -72,7 +73,7 @@
     const paid = fees.some(f => f.status === "지급완료");
     const m = openModal({
       title: "유입경로 변경",
-      body: `<label>유입경로<select id="csSel">${chOptions(cur, true)}</select></label><div class="small muted" id="csInfo" style="margin-top:6px"></div>
+      body: `<label>유입경로<select id="csSel">${chOptions(cur, true, "", true)}</select></label><div class="small muted" id="csInfo" style="margin-top:6px"></div>
         <div class="xs muted" style="margin-top:8px">지급하지 않은 수수료는 새 경로 기준으로 다시 계산됩니다.${paid ? "<br><b>이미 지급완료한 수수료는 그대로 남습니다.</b>" : ""}</div>`,
       foot: `<button class="btn" data-x>취소</button><button class="btn primary" data-ok>저장</button>`
     });
@@ -152,14 +153,14 @@
           <button class="btn sm accent" id="ffPaid">지급완료로</button><button class="btn sm" id="ffUnpaid">미지급으로 되돌리기</button></div>
         <div class="table-wrap"><table class="tbl cards-sm"><thead><tr><th><input type="checkbox" id="ffAll" style="width:auto"></th><th>날짜</th><th>경로</th><th>내용</th><th>고객·예약</th><th class="num">금액</th><th>상태</th><th></th></tr></thead>
         <tbody>${d.rows.map(r => `<tr class="${r.reservation_exists ? "click" : ""}" data-id="${esc(r.fee_id)}" data-res="${r.reservation_exists ? esc(r.reservation_id) : ""}">
-          <td><input type="checkbox" class="ffChk" value="${esc(r.fee_id)}" style="width:auto"></td>
+          <td>${r.kind === "소개비" ? "" : `<input type="checkbox" class="ffChk" value="${esc(r.fee_id)}" style="width:auto">`}</td>
           <td data-l="날짜" class="nowrap">${esc(r.fee_date)}</td><td data-l="경로"><b>${esc(r.channel_name)}</b></td>
           <td data-l="내용">${esc(r.kind)}${r.quantity > 1 ? ` ×${r.quantity}` : ""}${r.memo ? `<div class="xs muted">${esc(r.memo)}</div>` : ""}</td>
           <td data-l="고객·예약">${r.reservation_id ? `${esc(r.customer_name)} <span class="xs muted">${r.reservation_date ? dayLabel(r.reservation_date) : ""} ${esc(r.service_text)}</span>${r.reservation_status ? " " + statusPill(r.reservation_status) : ""}${r.reservation_exists ? "" : ' <span class="pill">예약 삭제됨</span>'}` : '<span class="muted">-</span>'}</td>
           <td data-l="금액" class="num b">${money(r.amount)}</td>
-          <td data-l="상태">${stPill(r.status)}${r.paid_at ? `<div class="xs muted">${esc(r.paid_at)}${r.paid_method ? " · " + esc(r.paid_method) : ""}</div>` : ""}</td>
-          <td>${r.kind !== "예약수수료" ? `<button class="btn sm ghost" data-del="${esc(r.fee_id)}" title="삭제">✕</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="8" class="empty">이 달의 수수료·비용 기록이 없습니다.</td></tr>'}</tbody></table></div>
-        <div class="xs muted" style="margin-top:8px">· 예약수수료: 예약에 유입경로를 지정하면 자동으로 생깁니다 (경로를 바꾸면 미지급분은 다시 계산). · 견적비·비용: 예약이 안 된 견적 비용 등을 직접 기록합니다.</div>
+          <td data-l="상태">${stPill(r.status)}${r.kind === "소개비" && r.status !== "지급완료" ? '<div class="xs muted">업체 협력 → 소개비 정산에서 정산</div>' : ""}${r.paid_at ? `<div class="xs muted">${esc(r.paid_at)}${r.paid_method ? " · " + esc(r.paid_method) : ""}</div>` : ""}</td>
+          <td>${r.kind !== "예약수수료" && r.kind !== "소개비" ? `<button class="btn sm ghost" data-del="${esc(r.fee_id)}" title="삭제">✕</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="8" class="empty">이 달의 수수료·비용 기록이 없습니다.</td></tr>'}</tbody></table></div>
+        <div class="xs muted" style="margin-top:8px">· 예약수수료: 예약에 유입경로를 지정하면 자동으로 생깁니다 (경로를 바꾸면 미지급분은 다시 계산). · 견적비·비용: 예약이 안 된 견적 비용 등을 직접 기록합니다. · 소개비: 업체 협력(제휴)으로 받은 예약을 작업완료하면 생기고, '업체 협력 → 소개비 정산'에서 정산 완료하면 지급완료가 됩니다.</div>
       </div>`;
     body.querySelector("#ffCh").onchange = e => { C.f.channel_id = e.target.value; rerender(); };
     body.querySelector("#ffSt").onchange = e => { C.f.status = e.target.value; rerender(); };
@@ -256,12 +257,13 @@
 
   function openChannelForm(c) {
     const isNew = !c.channel_id;
+    const share = c.fee_type === "소개비";
     const m = openModal({
       title: isNew ? "유입경로 추가" : "유입경로 수정",
       body: `<div class="grid2">
           <label>이름<input id="cfName" value="${esc(c.name || "")}" placeholder="예: 숨고"></label>
           <label>표시 순서<input type="number" id="cfSort" value="${c.sort || ""}"></label>
-          <label>수수료 방식<select id="cfType">${["없음", "정액", "정률"].map(t => `<option ${(c.fee_type || "없음") === t ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+          ${share ? `<div class="span2 box small">업체 협력(제휴)으로 받은 예약에 자동으로 붙는 경로입니다. 수수료는 요청마다 정해진 소개비로 작업완료 때 기록됩니다.</div><select id="cfType" hidden><option>없음</option></select>` : `<label>수수료 방식<select id="cfType">${["없음", "정액", "정률"].map(t => `<option ${(c.fee_type || "없음") === t ? "selected" : ""}>${t}</option>`).join("")}</select></label>`}
           <label id="cfValWrap">금액<input type="number" id="cfVal" min="0" value="${c.fee_value || ""}"></label>
           <label id="cfWhenWrap">수수료 생기는 때<select id="cfWhen"><option value="예약" ${c.fee_when !== "완료" ? "selected" : ""}>예약 등록할 때 (취소돼도 남음)</option><option value="완료" ${c.fee_when === "완료" ? "selected" : ""}>작업완료할 때</option></select></label>
           <label>메모<input id="cfMemo" value="${esc(c.memo || "")}"></label>
@@ -270,7 +272,7 @@
         <div class="xs muted" style="margin-top:6px">수수료를 바꿔도 이미 생긴 수수료 기록은 그대로입니다.</div>`,
       foot: `<button class="btn" data-x>취소</button><button class="btn primary" data-ok>저장</button>`
     });
-    const sync = () => { const t = m.$("#cfType").value; m.$("#cfValWrap").hidden = t === "없음"; m.$("#cfWhenWrap").hidden = t === "없음"; m.$("#cfValWrap").firstChild.textContent = t === "정률" ? "비율 (%)" : "건당 금액 (원)"; };
+    const sync = () => { const t = share ? "없음" : m.$("#cfType").value; m.$("#cfValWrap").hidden = t === "없음"; m.$("#cfWhenWrap").hidden = t === "없음"; m.$("#cfValWrap").firstChild.textContent = t === "정률" ? "비율 (%)" : "건당 금액 (원)"; };
     m.$("#cfType").onchange = sync; sync();
     m.$("[data-x]").onclick = m.close;
     m.$("[data-ok]").onclick = async () => {
