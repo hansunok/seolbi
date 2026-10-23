@@ -2723,7 +2723,7 @@ function showDocLink(text, url) {
     title: "🔗 문서 링크",
     body: `<p class="small">아래 링크를 받은 사람은 로그인 없이 PDF를 볼 수 있습니다. 카톡·문자에 붙여 넣어 보내세요.</p>
       <textarea id="dlText" rows="3" readonly style="width:100%">${esc(text)}</textarea>
-      <div class="xs muted" style="margin-top:6px">링크를 끊으려면 구글 드라이브 '(업체명)_문서' 폴더에서 해당 파일을 지우면 됩니다.</div>`,
+      <div class="xs muted" style="margin-top:6px">PDF는 서버(Supabase 'docs')에 저장되어 링크로 볼 수 있습니다.</div>`,
     foot: `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">열어보기</a><button class="btn" id="dlCopy">복사</button>${navigator.share ? `<button class="btn primary" id="dlShare">카톡 등으로 보내기</button>` : ""}`
   });
   m.$("#dlCopy").onclick = async () => {
@@ -3178,5 +3178,6 @@ function openBlogTemplateForm(t, onSave) {
 <script src="channel.js"></script>
 <script src="category.js"></script>
 <script src="sms.js"></script>
+<script src="inapp.js"></script>
 </body>
 </html>
