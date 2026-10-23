@@ -2,54 +2,28 @@
  *  카톡·네이버·인스타 안에서 링크를 열면 파일 내려받기(PDF 저장)·공유가 막혀 PDF가 제대로 안 만들어짐
  *  1) 위쪽에 안내 + [기본 브라우저로 열기] 버튼 (카톡은 바로 크롬/사파리로 열림)
  *  2) 그래도 앱 안에서 PDF를 만들면: 서버에 올린 뒤 그 PDF 주소를 열어 줌 (앱 안에서도 보기·저장 가능)
- *  0) 파일 공유가 안 되는 브라우저(PC·카톡 안 등)에서는 [📤 파일 공유]를 '링크로 공유'로 바꿈 */
+ *  0) [📤 공유]는 항상 PDF 링크로 보냄 (파일째 보내면 받는 쪽에서 다시 내려받기가 됨) */
 (function () {
   const ua = navigator.userAgent || "";
   const isKakao = /KAKAOTALK/i.test(ua);
   const inApp = isKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|FB_IAB|Line\/|DaumApps|everytimeApp|SamsungBrowser\/[\d.]+ .*CrossApp|; wv\)/i.test(ua);
   window.IN_APP_BROWSER = inApp;
 
-  /* 0) [📤 파일 공유] — 이 브라우저가 파일 공유를 못 하면 PDF 저장과 똑같아지므로, 링크 공유로 바꿈 (모든 브라우저) */
-  let fileShareOk = false;
-  try { fileShareOk = !inApp && !!(navigator.canShare && navigator.canShare({ files: [new File(["%PDF-"], "a.pdf", { type: "application/pdf" })] })); } catch (e) { fileShareOk = false; }
-  // 파일 공유 가능한 휴대폰에서도: PDF 만드는 데 몇 초 걸리면 '버튼 누른 직후'가 지나 공유 창이 막힘(→ 내려받기로 넘어가던 원인)
-  // → PDF를 먼저 만든 뒤 [📤 공유하기]를 한 번 더 누르게 함
+  /* 0) [📤 공유] = 항상 PDF 링크로 보냄 (2026-10-23 결정)
+   *    파일을 그대로 카톡에 넘기면 받는 쪽에서 다시 내려받기가 되므로, 링크만 보내는 쪽이 편함
+   *    → [📤 카톡 등으로 공유 (링크)] 하나로 합치고, 같은 일을 하던 [🔗 링크로 보내기]는 숨김 */
   const origPreview = window.openDocPreview;
   if (typeof origPreview === "function") {
-    window.openDocPreview = function (o) {
+    window.openDocPreview = function () {
       const m = origPreview.apply(this, arguments);
       try {
-        const sh = m.$("[data-share]"), lk = m.$("[data-link]"), msg = m.$("[data-pmsg]");
-        if (!sh || !lk) return m;
-        if (!fileShareOk) {
+        const sh = m.$("[data-share]"), lk = m.$("[data-link]");
+        if (sh && lk) {
           sh.textContent = "📤 카톡 등으로 공유 (링크)";
-          sh.title = "이 브라우저는 파일을 바로 공유할 수 없어서, PDF 링크를 만들어 보냅니다";
+          sh.title = "PDF를 링크로 만들어 보냅니다. 받는 사람은 로그인 없이 링크를 눌러 바로 볼 수 있어요";
           sh.onclick = () => lk.click();
           lk.hidden = true;
-          return m;
         }
-        sh.onclick = async () => {
-          sh.disabled = true; if (msg) msg.textContent = "PDF 만드는 중...";
-          let file;
-          try {
-            const blob = await makePdf(o.html);
-            file = new File([blob], o.shareName || "document.pdf", { type: "application/pdf" });
-          } catch (e) { if (msg) msg.textContent = ""; sh.disabled = false; return toast(e.message, true); }
-          if (msg) msg.textContent = ""; sh.disabled = false;
-          try { await navigator.share({ files: [file] }); return; }                 // 바로 되면 끝
-          catch (e) { if (e && e.name === "AbortError") return; }                   // 사용자가 닫음
-          const mm = openModal({
-            title: "PDF가 준비됐어요",
-            body: `<p class="small">아래 <b>[📤 공유하기]</b>를 누르면 카톡·문자 등 보낼 앱을 고를 수 있어요.</p>`,
-            foot: `<button class="btn" data-x>닫기</button><button class="btn" data-l>🔗 링크로 보내기</button><button class="btn primary" data-s>📤 공유하기</button>`
-          });
-          mm.$("[data-x]").onclick = mm.close;
-          mm.$("[data-l]").onclick = () => { mm.close(); lk.click(); };
-          mm.$("[data-s]").onclick = async () => {
-            try { await navigator.share({ files: [file] }); mm.close(); }
-            catch (e) { if (!e || e.name !== "AbortError") { mm.close(); toast("이 기기에선 파일 공유가 안 돼서 링크로 보낼게요."); lk.click(); } }
-          };
-        };
       } catch (e) {}
       return m;
     };
