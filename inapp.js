@@ -1,12 +1,34 @@
 /* 설비시스템 DB판 — 카카오톡 등 '앱 안 브라우저'에서 열었을 때 (2026-10-23)
  *  카톡·네이버·인스타 안에서 링크를 열면 파일 내려받기(PDF 저장)·공유가 막혀 PDF가 제대로 안 만들어짐
  *  1) 위쪽에 안내 + [기본 브라우저로 열기] 버튼 (카톡은 바로 크롬/사파리로 열림)
- *  2) 그래도 앱 안에서 PDF를 만들면: 서버에 올린 뒤 그 PDF 주소를 열어 줌 (앱 안에서도 보기·저장 가능) */
+ *  2) 그래도 앱 안에서 PDF를 만들면: 서버에 올린 뒤 그 PDF 주소를 열어 줌 (앱 안에서도 보기·저장 가능)
+ *  0) 파일 공유가 안 되는 브라우저(PC·카톡 안 등)에서는 [📤 파일 공유]를 '링크로 공유'로 바꿈 */
 (function () {
   const ua = navigator.userAgent || "";
   const isKakao = /KAKAOTALK/i.test(ua);
   const inApp = isKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|FB_IAB|Line\/|DaumApps|everytimeApp|SamsungBrowser\/[\d.]+ .*CrossApp|; wv\)/i.test(ua);
   window.IN_APP_BROWSER = inApp;
+
+  /* 0) [📤 파일 공유] — 이 브라우저가 파일 공유를 못 하면 PDF 저장과 똑같아지므로, 링크 공유로 바꿈 (모든 브라우저) */
+  let fileShareOk = false;
+  try { fileShareOk = !inApp && !!(navigator.canShare && navigator.canShare({ files: [new File(["%PDF-"], "a.pdf", { type: "application/pdf" })] })); } catch (e) { fileShareOk = false; }
+  const origPreview = window.openDocPreview;
+  if (typeof origPreview === "function" && !fileShareOk) {
+    window.openDocPreview = function () {
+      const m = origPreview.apply(this, arguments);
+      try {
+        const sh = m.$("[data-share]"), lk = m.$("[data-link]");
+        if (sh && lk) {
+          sh.textContent = "📤 카톡 등으로 공유 (링크)";
+          sh.title = "이 브라우저는 파일을 바로 공유할 수 없어서, PDF 링크를 만들어 보냅니다";
+          sh.onclick = () => lk.click();
+          lk.hidden = true;
+        }
+      } catch (e) {}
+      return m;
+    };
+  }
+
   if (!inApp) return;
   const isIOS = /iPhone|iPad|iPod/i.test(ua), isAndroid = /Android/i.test(ua);
 
