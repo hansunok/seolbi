@@ -12,18 +12,44 @@
   /* 0) [📤 파일 공유] — 이 브라우저가 파일 공유를 못 하면 PDF 저장과 똑같아지므로, 링크 공유로 바꿈 (모든 브라우저) */
   let fileShareOk = false;
   try { fileShareOk = !inApp && !!(navigator.canShare && navigator.canShare({ files: [new File(["%PDF-"], "a.pdf", { type: "application/pdf" })] })); } catch (e) { fileShareOk = false; }
+  // 파일 공유 가능한 휴대폰에서도: PDF 만드는 데 몇 초 걸리면 '버튼 누른 직후'가 지나 공유 창이 막힘(→ 내려받기로 넘어가던 원인)
+  // → PDF를 먼저 만든 뒤 [📤 공유하기]를 한 번 더 누르게 함
   const origPreview = window.openDocPreview;
-  if (typeof origPreview === "function" && !fileShareOk) {
-    window.openDocPreview = function () {
+  if (typeof origPreview === "function") {
+    window.openDocPreview = function (o) {
       const m = origPreview.apply(this, arguments);
       try {
-        const sh = m.$("[data-share]"), lk = m.$("[data-link]");
-        if (sh && lk) {
+        const sh = m.$("[data-share]"), lk = m.$("[data-link]"), msg = m.$("[data-pmsg]");
+        if (!sh || !lk) return m;
+        if (!fileShareOk) {
           sh.textContent = "📤 카톡 등으로 공유 (링크)";
           sh.title = "이 브라우저는 파일을 바로 공유할 수 없어서, PDF 링크를 만들어 보냅니다";
           sh.onclick = () => lk.click();
           lk.hidden = true;
+          return m;
         }
+        sh.onclick = async () => {
+          sh.disabled = true; if (msg) msg.textContent = "PDF 만드는 중...";
+          let file;
+          try {
+            const blob = await makePdf(o.html);
+            file = new File([blob], o.shareName || "document.pdf", { type: "application/pdf" });
+          } catch (e) { if (msg) msg.textContent = ""; sh.disabled = false; return toast(e.message, true); }
+          if (msg) msg.textContent = ""; sh.disabled = false;
+          try { await navigator.share({ files: [file] }); return; }                 // 바로 되면 끝
+          catch (e) { if (e && e.name === "AbortError") return; }                   // 사용자가 닫음
+          const mm = openModal({
+            title: "PDF가 준비됐어요",
+            body: `<p class="small">아래 <b>[📤 공유하기]</b>를 누르면 카톡·문자 등 보낼 앱을 고를 수 있어요.</p>`,
+            foot: `<button class="btn" data-x>닫기</button><button class="btn" data-l>🔗 링크로 보내기</button><button class="btn primary" data-s>📤 공유하기</button>`
+          });
+          mm.$("[data-x]").onclick = mm.close;
+          mm.$("[data-l]").onclick = () => { mm.close(); lk.click(); };
+          mm.$("[data-s]").onclick = async () => {
+            try { await navigator.share({ files: [file] }); mm.close(); }
+            catch (e) { if (!e || e.name !== "AbortError") { mm.close(); toast("이 기기에선 파일 공유가 안 돼서 링크로 보낼게요."); lk.click(); } }
+          };
+        };
       } catch (e) {}
       return m;
     };
